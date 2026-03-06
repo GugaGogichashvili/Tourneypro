@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  ORGANIZER
+  PLAYER
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+}
+
+enum MatchStatus {
+  PENDING
+  READY
+  IN_PROGRESS
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  SUSPENDED
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  password      String
+  avatar        String?
+  bio           String?
+  role          Role      @default(PLAYER)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  organizedTournaments Tournament[] @relation("OrganizerTournaments")
+  participations       TournamentParticipant[]
+  matchesAsPlayer1     Match[] @relation("Player1Matches")
+  matchesAsPlayer2     Match[] @relation("Player2Matches")
+  matchResults         MatchResult[]
+  notifications        Notification[]
+  achievements         UserAchievement[]
+}
+
+model Achievement {
+  id          String           @id @default(uuid())
+  name        String
+  description String
+  icon        String
+  createdAt   DateTime         @default(now())
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  id            String     @id @default(uuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime   @default(now())
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+}
+
+model Tournament {
+  id              String            @id @default(uuid())
+  name            String
+  description     String?
+  gameTitle       String
+  rules           String?
+  prizePool       Float             @default(0)
+  entryFee        Float             @default(0)
+  maxPlayers      Int
+  format          TournamentFormat
+  status          TournamentStatus  @default(DRAFT)
+  startDate       DateTime
+  checkInTime     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  organizerId     String
+  organizer       User              @relation("OrganizerTournaments", fields: [organizerId], references: [id])
+  participants    TournamentParticipant[]
+  matches         Match[]
+  bracketData     BracketData?
+}
+
+model TournamentParticipant {
+  id            String    @id @default(uuid())
+  tournamentId  String
+  userId        String
+  status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  seed          Int?
+  checkedIn     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+}
+
+model BracketData {
+  id            String    @id @default(uuid())
+  tournamentId  String    @unique
+  data          Json
+  updatedAt     DateTime  @updatedAt
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+}
+
+model Match {
+  id            String      @id @default(uuid())
+  tournamentId  String
+  round         Int
+  matchNumber   Int
+  position      Int         // Position in the bracket
+  status        MatchStatus @default(PENDING)
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  winnerId      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  tournament    Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player1Id     String?
+  player1       User?       @relation("Player1Matches", fields: [player1Id], references: [id])
+  player2Id     String?
+  player2       User?       @relation("Player2Matches", fields: [player2Id], references: [id])
+  winner        User?       @relation(fields: [winnerId], references: [id])
+  results       MatchResult[]
+  bracketData   Json?       // For storing bracket-specific data
+
+  @@unique([tournamentId, round, matchNumber])
+}
+
+model MatchResult {
+  id          String   @id @default(uuid())
+  matchId     String
+  playerId    String
+  score       Int
+  won         Boolean
+  submittedAt DateTime @default(now())
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player      User     @relation(fields: [playerId], references: [id])
+
+  @@unique([matchId, playerId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
